@@ -48,7 +48,7 @@ headers_2 = {'authority': 'z1.fm',
            }
 
 
-#payload = {'keywords': 'Battle Beast-Out of Control'}
+payload = {'keywords': ''}
 #r = requests.get("https://z1.fm/mp3/search", params=payload, headers = headers, verify=False)
 
 def initial_checks(our_dir):
@@ -68,9 +68,12 @@ def initial_checks(our_dir):
 def parse_dock(text):
     return re.findall(r'data-track="(\S+)">\n', text)
 
-def make_log(query):
+def make_log(query, count):
     with open(bad_songs, 'a') as file:
-        file.write(query + '\n')
+        try:
+            file.write(query + '\n')
+        except:
+            file.write(str(count) + '\n')
 
 def make_name(query):
     for z in range(100):
@@ -80,7 +83,10 @@ def make_name(query):
         
         #check if there is a file
         if os.path.exists(r'{0}/{1}{2}.mp3'.format(our_dir, query, s)) == False:
-            return r'{0}/{1}{2}.mp3'.format(our_dir, query, s)
+            name = r'{0}/{1}{2}.mp3'.format(our_dir, query, s)
+            name = name.replace('/', '-')
+            name = name.replace('\\', '-')
+            return name
     
     return 'ERROR'    
             
@@ -100,20 +106,81 @@ def request_1(query, executor, song):
                 name_file = make_name(query)
                 with open(name_file, 'wb') as file:
                     file.write(r.content)
+                
+                return 'good result'    
             else:
                 return 'bad result'
     else:
         return 'bad result'
 
+def get_link(req, executor, song, list_artists, list_songs, list_download):
+    list_artists = re.findall(r'href="/artist/[0-9]+"><span>([^<>]+)</span>', req.text)
+    list_songs = re.findall(r'href="/song/[0-9]+"><span>([^<>]+)</span>', req.text)
+    list_download = re.findall(r'data-url="(\S+)" class=', req.text)
+    
+    for z in range(len(list_artists)):
+        artists = list_artists[z].lower()
+        songs = list_songs[z].lower()
+        executor = executor.lower()
+        song = song.lower()
+        if artists == executor:
+            return r'https://z1.fm{}'.format(list_download[z])
+
+def request_2(query, executor, song):
+    payload['keywords'] = query
+    headers_2['path'] = r'/mp3/search?keywords={}'.format(query.replace(' ', '+'))
+    headers_2['referer'] = r'https://z1.fm/mp3/search?keywords={}'.format(query.replace(' ', '+'))
+    
+    try:
+        req = requests.get("https://z1.fm/mp3/search", params=payload, headers = headers_2, verify=False)
+    except:
+        return 'bad result'
+    
+    if req.status_code != 200:
+        return 'bad result'
+    
+    list_artists = []
+    list_songs = []
+    list_download = []
+    
+    link = get_link(req, executor, song, list_artists, list_songs, list_download)
+    
+    if link == None:
+        return 'bad result'
+    
+    r = requests.get(link, stream=True, headers = headers_2, verify=False)
+    
+    if r.status_code != 200:
+        return 'bad result'
+    
+    name_file = make_name(query)
+    with open(name_file, 'wb') as file:
+        file.write(r.content)  
+        
+    return 'good result'    
+
 def read_songs(our_work_file):
     with open(our_work_file, 'r', encoding='utf-8') as file:
+        count = 0
         for string in file:
+            count += 1
             string = string.strip('\ufeff')
             string = string.strip('\n')
             query, executor, song = string, string.split('-')[0], string.split('-')[1]
             
+            #if query == "Sum 41-There's No Solution":
+                #print
+            
             #request 1
-            request_1(query, executor, song)
+            res = request_1(query, executor, song)
+            
+            if res == 'good result':
+                continue
+            
+            #request 2
+            res = request_2(query, executor, song)
+            if res == 'bad result':
+                make_log(query, count)
 
 if __name__ == '__main__':
     #our_dir = askdirectory()
